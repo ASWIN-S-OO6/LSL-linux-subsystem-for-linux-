@@ -73,12 +73,12 @@ enum Commands {
 }
 
 fn check_root_privileges() {
-    let uid = unsafe { libc::getuid() };
+    let uid = unsafe { libc::geteuid() };
     if uid != 0 {
         eprintln!(
             "{} {}",
             "Error:".red().bold(),
-            "LSL requires root privileges. Please rerun this command using 'sudo'.".red()
+            "LSL requires root privileges. Please rerun this command using 'sudo'."
         );
         std::process::exit(1);
     }

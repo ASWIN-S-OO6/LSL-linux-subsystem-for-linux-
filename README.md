@@ -36,64 +36,68 @@ Unlike heavy virtualization systems, LSL boots in milliseconds and integrates di
 
 ## How to Use
 
+> [!NOTE]
+> - **No `sudo` Required**: During installation, LSL is configured with SUID permissions (`chmod 4755`). This allows you to run all `lsl` commands directly as a standard host user without typing `sudo`.
+> - **Supported Distributions**: For now, **Kali Linux** (`kali`) is the only pre-configured distribution available by default for the `install` command. You can still import other Linux rootfs files using the `import` command.
+
 ### 1. Install Guest Distribution
 To install the default supported Kali Linux distribution:
 ```bash
-sudo lsl install kali
+lsl install kali
 ```
 During first setup, LSL will download the rootfs and run an interactive prompt for you to configure your guest username, hostname, passwords, and security package sets (Minimal, Core, or Headless).
 
 ### 2. Enter the Subsystem (Interactive Login)
 To launch the default login shell inside your guest distribution:
 ```bash
-sudo lsl
+lsl
 ```
 This boots the container (if stopped) and logs you into Zsh. You will be greeted with the system hardware statistics and ASCII logo from `fastfetch`.
 
 ### 3. Run Commands Directly
 To execute a command inside the default distro without entering the shell:
 ```bash
-sudo lsl run <command>
+lsl run <command>
 ```
 *Example:*
 ```bash
-sudo lsl run ip address show
+lsl run ip address show
 ```
 Or use the shortcut by omitting `run`:
 ```bash
-sudo lsl apt update
+lsl apt update
 ```
 
 ### 4. Run as Root
 By default, commands and login shells run as your configured guest user. To run them as `root`:
 ```bash
-sudo lsl --root
+lsl --root
 ```
 Or for direct commands:
 ```bash
-sudo lsl --root apt update
+lsl --root apt update
 ```
 
 ### 5. Check Subsystem Status
 To list all registered distributions, their boot status, and network IP/MAC addresses:
 ```bash
-sudo lsl list
+lsl list
 ```
 
 ### 6. Stop a Running Subsystem
 To stop a running distro daemon and clean up its virtual network interfaces:
 ```bash
-sudo lsl stop <distro-name>
+lsl stop <distro-name>
 ```
 
 ### 7. Import Custom Distributions
 You can import custom rootfs tarballs (like Arch Linux, Ubuntu, etc.):
 ```bash
-sudo lsl import <subsystem-name> /path/to/rootfs.tar.xz
+lsl import <subsystem-name> /path/to/rootfs.tar.xz
 ```
 
 ### 8. Unregister/Delete a Subsystem
 To completely delete a distribution, its overlay filesystems, and configurations:
 ```bash
-sudo lsl unregister <distro-name>
+lsl unregister <distro-name>
 ```
