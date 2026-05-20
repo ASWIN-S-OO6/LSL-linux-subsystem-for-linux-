@@ -37,8 +37,10 @@ Unlike heavy virtualization systems, LSL boots in milliseconds and integrates di
 ## How to Use
 
 > [!NOTE]
-> - **No `sudo` Required**: During installation, LSL is configured with SUID permissions (`chmod 4755`). This allows you to run all `lsl` commands directly as a standard host user without typing `sudo`.
+> - **SUID Execution & Privilege Escalation**: During installation, LSL is configured with SUID permissions (`chmod 4755`). This allows you to run subcommands (like `lsl list` or `lsl run <cmd>`) directly without typing `sudo`.
+> - **Interactive Login Password Prompt**: When launching the interactive login shell (`lsl` without arguments), a separate graphical terminal window is opened. Inside this new window, you will be prompted for your host user password via `sudo` to boot/escalate the subsystem. This also registers your host user context (`SUDO_USER`) so that guest `sudo` commands execute without a password.
 > - **Supported Distributions**: For now, **Kali Linux** (`kali`) is the only pre-configured distribution available by default for the `install` command. You can still import other Linux rootfs files using the `import` command.
+
 
 ### 1. Install Guest Distribution
 To install the default supported Kali Linux distribution:
