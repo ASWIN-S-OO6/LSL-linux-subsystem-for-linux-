@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Linux Subsystem Layer (LSL) Installer
+# Linux Subsystem for Linux (LSL) Installer
 # Automates compiling and installing LSL to /usr/local/bin
 #
 
@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}===================================================${NC}"
-echo -e "${BLUE}    Linux Subsystem Layer (LSL) Installer         ${NC}"
+echo -e "${BLUE}    Linux Subsystem for Linux (LSL) Installer         ${NC}"
 echo -e "${BLUE}===================================================${NC}"
 
 # Check if Rust and Cargo are installed, install if missing

@@ -11,7 +11,7 @@ use colored::Colorize;
 
 #[derive(Parser)]
 #[command(name = "lsl")]
-#[command(about = "Linux Subsystem Layer — A lightweight subsystem manager for Linux hosts", long_about = None)]
+#[command(about = "Linux Subsystem for Linux — A lightweight subsystem manager for Linux hosts", long_about = None)]
 struct Cli {
     #[arg(short, long, help = "Specify the distro to run")]
     distro: Option<String>,

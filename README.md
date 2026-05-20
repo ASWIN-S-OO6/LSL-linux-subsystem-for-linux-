@@ -1,6 +1,6 @@
-# Linux Subsystem Layer (LSL)
+# Linux Subsystem for Linux (LSL)
 
-LSL (Linux Subsystem Layer) is a lightweight, low-overhead subsystem manager for Linux hosts. It allows you to run isolated guest Linux distributions (such as Kali Linux) natively on your Linux host using native kernel features.
+LSL (Linux Subsystem for Linux) is a lightweight, low-overhead subsystem manager for Linux hosts. It allows you to run isolated guest Linux distributions (such as Kali Linux) natively on your Linux host using native kernel features.
 
 Unlike heavy virtualization systems, LSL boots in milliseconds and integrates directly with the host's GUI and audio systems.
 
