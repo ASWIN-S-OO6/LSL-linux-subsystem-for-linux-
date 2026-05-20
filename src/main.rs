@@ -72,6 +72,9 @@ enum Commands {
     },
 }
 
+use std::os::unix::process::CommandExt;
+
+
 fn check_root_privileges() {
     let uid = unsafe { libc::geteuid() };
     if uid != 0 {
@@ -82,19 +85,47 @@ fn check_root_privileges() {
         );
         std::process::exit(1);
     }
+
+    // Force initialization of host user details cache while we still have the original real UID
+    let _ = distro::get_host_user_details();
+
+    // Promote to real root if we are running setuid (ruid != 0 but euid == 0)
+    let ruid = unsafe { libc::getuid() };
+    if ruid != 0 {
+        if unsafe { libc::setuid(0) } != 0 {
+            eprintln!(
+                "{} {}",
+                "Warning:".yellow().bold(),
+                "Failed to set real UID to root. Some operations may fail."
+            );
+        }
+    }
 }
 
 fn spawn_separate_terminal() -> bool {
     let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("./target/debug/lsl"));
     let sudo_user = std::env::var("SUDO_USER").ok();
 
+    let ruid = unsafe { libc::getuid() };
+    let rgid = unsafe { libc::getgid() };
+
     // Authorize local connections to the X server under the current user's authority
-    let _ = Command::new("xhost").arg("+local:").status();
+    let mut xhost_cmd = Command::new("xhost");
+    xhost_cmd.arg("+local:");
+    if ruid != 0 {
+        xhost_cmd.uid(ruid).gid(rgid);
+    }
+    let _ = xhost_cmd.status();
 
     let emulators = ["konsole", "gnome-terminal", "xfce4-terminal", "xterm"];
     let mut chosen_emulator = None;
     for emu in &emulators {
-        if Command::new("which").arg(emu).output().map(|o| o.status.success()).unwrap_or(false) {
+        let mut which_cmd = Command::new("which");
+        which_cmd.arg(emu);
+        if ruid != 0 {
+            which_cmd.uid(ruid).gid(rgid);
+        }
+        if which_cmd.output().map(|o| o.status.success()).unwrap_or(false) {
             chosen_emulator = Some(*emu);
             break;
         }
@@ -108,10 +139,14 @@ fn spawn_separate_terminal() -> bool {
     let display = std::env::var("DISPLAY").unwrap_or_else(|_| ":0".to_string());
     let xauth = std::env::var("XAUTHORITY").unwrap_or_default();
     let wayland = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
+
+    // We always use 'sudo' inside the terminal emulator so it asks for the host user's password,
+    // which also ensures SUDO_USER is set and propagates correctly to the guest distro config.
     let inner_cmd = format!(
         "sudo env LSL_ALREADY_SPAWNED=1 DISPLAY='{}' XAUTHORITY='{}' WAYLAND_DISPLAY='{}' {}",
         display, xauth, wayland, current_exe.to_str().unwrap()
     );
+
 
     // If we are root (running under sudo), we should run the terminal emulator as the host user
     // so it can connect to the X/Wayland display server.
@@ -142,32 +177,41 @@ fn spawn_separate_terminal() -> bool {
         };
         status.map(|s| s.success()).unwrap_or(false)
     } else {
-        // If we are already the normal user (not under sudo)
-        let status = match emu {
+        // If we are already the normal user (but might be running under setuid root, e.g. euid=0, ruid=1000)
+        let mut cmd = match emu {
             "konsole" => {
-                Command::new("konsole")
-                    .args(&["-e", "sh", "-c", &inner_cmd])
-                    .status()
+                let mut c = Command::new("konsole");
+                c.args(&["-e", "sh", "-c", &inner_cmd]);
+                c
             }
             "gnome-terminal" => {
-                Command::new("gnome-terminal")
-                    .args(&["--", "sh", "-c", &inner_cmd])
-                    .status()
+                let mut c = Command::new("gnome-terminal");
+                c.args(&["--", "sh", "-c", &inner_cmd]);
+                c
             }
             "xfce4-terminal" => {
-                Command::new("xfce4-terminal")
-                    .args(&["-e", &format!("sh -c \"{}\"", inner_cmd)])
-                    .status()
+                let mut c = Command::new("xfce4-terminal");
+                c.args(&["-e", &format!("sh -c \"{}\"", inner_cmd)]);
+                c
             }
             _ => { // xterm
-                Command::new("xterm")
-                    .args(&["-e", "sh", "-c", &inner_cmd])
-                    .status()
+                let mut c = Command::new("xterm");
+                c.args(&["-e", "sh", "-c", &inner_cmd]);
+                c
             }
         };
+
+        // If running as setuid (ruid != 0 but euid == 0), we must drop privileges in the child process
+        // to match the real user so that GUI tools like Konsole/gnome-terminal don't reject setuid execution.
+        if ruid != 0 {
+            cmd.uid(ruid).gid(rgid);
+        }
+
+        let status = cmd.status();
         status.map(|s| s.success()).unwrap_or(false)
     }
 }
+
 
 fn main() -> io::Result<()> {
     // Parse arguments using clap

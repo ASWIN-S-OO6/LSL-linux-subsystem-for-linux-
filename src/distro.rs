@@ -153,21 +153,28 @@ pub fn unregister_distro(name: &str) -> io::Result<()> {
     Ok(())
 }
 
-pub fn get_host_user_details() -> (String, u32, u32) {
-    let sudo_user = std::env::var("SUDO_USER").ok();
-    let sudo_uid = std::env::var("SUDO_UID").ok().and_then(|s| s.parse::<u32>().ok());
-    let sudo_gid = std::env::var("SUDO_GID").ok().and_then(|s| s.parse::<u32>().ok());
+use std::sync::OnceLock;
 
-    match (sudo_user, sudo_uid, sudo_gid) {
-        (Some(user), Some(uid), Some(gid)) => (user, uid, gid),
-        _ => {
-            let uid = unsafe { libc::getuid() };
-            let gid = unsafe { libc::getgid() };
-            let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
-            (user, uid, gid)
+static HOST_USER_DETAILS: OnceLock<(String, u32, u32)> = OnceLock::new();
+
+pub fn get_host_user_details() -> (String, u32, u32) {
+    HOST_USER_DETAILS.get_or_init(|| {
+        let sudo_user = std::env::var("SUDO_USER").ok();
+        let sudo_uid = std::env::var("SUDO_UID").ok().and_then(|s| s.parse::<u32>().ok());
+        let sudo_gid = std::env::var("SUDO_GID").ok().and_then(|s| s.parse::<u32>().ok());
+
+        match (sudo_user, sudo_uid, sudo_gid) {
+            (Some(user), Some(uid), Some(gid)) => (user, uid, gid),
+            _ => {
+                let uid = unsafe { libc::getuid() };
+                let gid = unsafe { libc::getgid() };
+                let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+                (user, uid, gid)
+            }
         }
-    }
+    }).clone()
 }
+
 
 pub fn setup_distro_user(distro_root: &Path, username: &str, uid: u32, gid: u32) -> io::Result<()> {
     let passwd_path = distro_root.join("etc/passwd");
