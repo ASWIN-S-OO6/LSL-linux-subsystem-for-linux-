@@ -168,7 +168,11 @@ pub fn get_host_user_details() -> (String, u32, u32) {
             _ => {
                 let uid = unsafe { libc::getuid() };
                 let gid = unsafe { libc::getgid() };
-                let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+                let user = if let Ok(Some(u)) = nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(uid)) {
+                    u.name
+                } else {
+                    std::env::var("USER").unwrap_or_else(|_| "root".to_string())
+                };
                 (user, uid, gid)
             }
         }

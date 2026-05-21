@@ -70,6 +70,12 @@ enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, help = "Command and arguments to run")]
         command_args: Vec<String>,
     },
+
+    #[command(about = "Boot a guest distribution (mounts storage and configures network) without entering it")]
+    Boot {
+        #[arg(help = "Name of the distribution to boot")]
+        name: Option<String>,
+    },
 }
 
 use std::os::unix::process::CommandExt;
@@ -217,10 +223,14 @@ fn main() -> io::Result<()> {
     // Parse arguments using clap
     let cli = Cli::parse();
 
-    // Check if we want to run the default interactive shell in a separate terminal
+    // Check if we want to run the default interactive shell in a separate terminal.
+    // We only spawn a separate terminal emulator if we are NOT already in an interactive terminal.
     if cli.subcommand.is_none() && cli.command_args.is_empty() && std::env::var("LSL_ALREADY_SPAWNED").is_err() {
-        if spawn_separate_terminal() {
-            std::process::exit(0);
+        let is_tty = unsafe { libc::isatty(libc::STDIN_FILENO) == 1 };
+        if !is_tty {
+            if spawn_separate_terminal() {
+                std::process::exit(0);
+            }
         }
     }
 
@@ -280,6 +290,21 @@ fn main() -> io::Result<()> {
             
             let exit_code = runtime::run_command_in_distro(&target_distro, &command_args, root)?;
             std::process::exit(exit_code);
+        }
+        Some(Commands::Boot { name }) => {
+            let global_cfg = config::GlobalConfig::load();
+            let target_distro = name.or(global_cfg.default_distro).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, "No default distro set. Install one first using 'lsl install kali'")
+            })?;
+            
+            match runtime::get_distro_init_pid(&target_distro) {
+                Some(pid) => {
+                    println!("Distro '{}' is already running (PID {}).", target_distro, pid);
+                }
+                None => {
+                    let _pid = runtime::boot_distro(&target_distro)?;
+                }
+            }
         }
         None => {
             // Check if we passed trailing args directly without "run" subcommand (e.g. "lsl ls -la")

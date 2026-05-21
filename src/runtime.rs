@@ -708,8 +708,12 @@ pub fn run_command_in_distro(name: &str, command_args: &[String], run_as_root: b
             eprintln!("Warning: Failed to create profile.d directory: {}", e);
         }
         let fastfetch_sh_path = profile_d.join("fastfetch.sh");
-        if !fastfetch_sh_path.exists() {
-            let script_content = "# Only run fastfetch if stdout is a tty (interactive session)\nif [ -t 1 ] && command -v fastfetch >/dev/null 2>&1; then\n    fastfetch\nfi\n";
+        let script_content = "# Only run fastfetch if stdout is a tty (interactive session)\nif [ -t 1 ] && command -v fastfetch >/dev/null 2>&1; then\n    clear 2>/dev/null || printf \"\\033[H\\033[2J\"\n    fastfetch\nfi\n";
+        let should_write = match fs::read_to_string(&fastfetch_sh_path) {
+            Ok(content) => content != script_content,
+            Err(_) => true,
+        };
+        if should_write {
             if let Err(e) = fs::write(&fastfetch_sh_path, script_content) {
                 eprintln!("Warning: Failed to write fastfetch.sh: {}", e);
             } else {
