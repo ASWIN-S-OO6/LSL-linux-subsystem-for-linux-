@@ -37,6 +37,13 @@ sudo cp target/release/lsl /usr/local/bin/lsl
 # Set SUID permission (4755) so users can run lsl without sudo
 sudo chmod 4755 /usr/local/bin/lsl
 
+# Self-heal setup completion flag if the subsystem already exists
+if [ -d "/var/lib/lsl/distros/kali" ]; then
+    echo -e "${BLUE}[LSL] Restoring persistence flag to prevent setup prompt...${NC}"
+    sudo mkdir -p /var/lib/lsl/distros/kali/diff/etc
+    sudo touch /var/lib/lsl/distros/kali/diff/etc/lsl_setup_completed
+fi
+
 echo -e "${BLUE}[LSL] Setting up systemd user service for automatic boot...${NC}"
 # Determine the real user (even if running under sudo)
 REAL_USER="${SUDO_USER:-$(whoami)}"

@@ -494,18 +494,7 @@ pub fn run_command_in_distro(name: &str, command_args: &[String], run_as_root: b
     let distro_dir = get_distro_dir(name);
     let setup_completed_file = distro_dir.join("merged").join("etc/lsl_setup_completed");
     
-    let mut setup_needed = !setup_completed_file.exists();
-    if !setup_needed {
-        // Self-healing: if ping, zsh or dhclient are missing inside the guest, trigger setup/repair!
-        let dhclient_path = distro_dir.join("merged").join("usr/sbin/dhclient");
-        let ping_path = distro_dir.join("merged").join("usr/bin/ping");
-        let zsh_path = distro_dir.join("merged").join("usr/bin/zsh");
-        if !dhclient_path.exists() || !ping_path.exists() || !zsh_path.exists() {
-            println!("{}", "[LSL] Repairing subsystem: installing missing networking and core tools...".yellow().bold());
-            let _ = fs::remove_file(&setup_completed_file);
-            setup_needed = true;
-        }
-    }
+    let setup_needed = !setup_completed_file.exists();
 
     if setup_needed {
         // Run interactive setup!
