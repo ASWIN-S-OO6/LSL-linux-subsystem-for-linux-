@@ -32,9 +32,54 @@ pub fn setup_network(name: &str, init_pid: u32, ip_address: &str, mac_address: &
     let is_setup_mode = !setup_completed_file.exists();
 
     // Get default route details of the host
-    let (host_dev, host_src, _host_via) = get_default_route_details()
+    let (host_dev, host_src, host_via) = get_default_route_details()
         .unwrap_or_else(|_| ("wlp46s0".to_string(), "10.0.0.1".to_string(), "10.0.0.1".to_string()));
     let is_wifi = host_dev.starts_with('w');
+
+    let is_custom_lan_ip = ip_address != "dhcp" && are_ips_in_same_subnet(ip_address, &host_src);
+
+    if is_custom_lan_ip && !is_setup_mode {
+        println!("{}", format!("[LSL] Network mode: True Layer 2 Bridging for static IP {}...", ip_address).cyan());
+        let ipvlan_interface = format!("lsl-ipvl-{}", name);
+        let mut success = true;
+
+        let status = Command::new("ip")
+            .args(&["link", "add", &ipvlan_interface, "link", &host_dev, "type", "ipvlan", "mode", "l2"])
+            .status();
+        if status.is_err() || !status.unwrap().success() {
+            success = false;
+        }
+
+        if success {
+            let status = Command::new("ip")
+                .args(&["link", "set", &ipvlan_interface, "netns", &netns_name, "name", "eth0"])
+                .status();
+            if status.is_err() || !status.unwrap().success() {
+                success = false;
+            }
+        }
+
+        if success {
+            let _ = Command::new("ip").args(&["netns", "exec", &netns_name, "ip", "addr", "add", &format!("{}/24", ip_address), "dev", "eth0"]).status();
+            let _ = Command::new("ip").args(&["netns", "exec", &netns_name, "ip", "link", "set", "dev", "eth0", "up"]).status();
+            let _ = Command::new("ip").args(&["netns", "exec", &netns_name, "ip", "link", "set", "dev", "lo", "up"]).status();
+            
+            // Set the default gateway to the physical router
+            let route_status = Command::new("ip").args(&["netns", "exec", &netns_name, "ip", "route", "add", "default", "via", &host_via]).status();
+            if route_status.is_err() || !route_status.unwrap().success() {
+                success = false;
+            }
+        }
+
+        if success {
+            println!("{}", "[LSL] Layer 2 Bridging setup succeeded.".green());
+            return Ok(());
+        } else {
+            println!("{}", "Warning: Layer 2 Bridging failed. Falling back to NAT.".yellow());
+            let _ = Command::new("ip").args(&["link", "del", &ipvlan_interface]).status();
+            let _ = Command::new("ip").args(&["netns", "exec", &netns_name, "ip", "link", "del", "eth0"]).status();
+        }
+    }
 
     if is_wifi {
         println!("{}", "[LSL] Wireless (Wi-Fi) host network detected. Automatically using NAT mode for reliable internet access.".cyan());
@@ -283,37 +328,11 @@ pub fn setup_network(name: &str, init_pid: u32, ip_address: &str, mac_address: &
     let status2 = Command::new("nft").args(&["add", "chain", "ip", &table_name, "nat", "{ type nat hook postrouting priority 100 ; }"]).status()?;
     let status3 = Command::new("nft").args(&["add", "chain", "ip", &table_name, "prerouting", "{ type nat hook prerouting priority -100 ; }"]).status()?;
 
-    let is_custom_lan_ip = ip_address != "dhcp" && are_ips_in_same_subnet(ip_address, &host_src);
-
-    if is_custom_lan_ip {
-        println!("{}", format!("[LSL] Configuring 1:1 NAT bridging for external LAN IP: {}", ip_address).green());
-        
-        let _ = Command::new("ip").args(&["addr", "del", &format!("{}/24", ip_address), "dev", &host_dev]).status();
-        let add_alias_status = Command::new("ip").args(&["addr", "add", &format!("{}/24", ip_address), "dev", &host_dev]).status()?;
-        if !add_alias_status.success() {
-            println!("{}", "Warning: Failed to add IP alias to host physical interface.".yellow());
-        }
-
-        let rule_dnat = Command::new("nft")
-            .args(&["add", "rule", "ip", &table_name, "prerouting", "ip", "daddr", ip_address, "dnat", "to", guest_ip])
-            .status()?;
-
-        let rule_snat = Command::new("nft")
-            .args(&["add", "rule", "ip", &table_name, "nat", "ip", "saddr", guest_ip, "oifname", &host_dev, "snat", "to", ip_address])
-            .status()?;
-
-        if !status1.success() || !status2.success() || !status3.success() || !rule_dnat.success() || !rule_snat.success() {
-            println!("{}", "Warning: 1:1 NAT rules configuration failed.".yellow());
-        } else {
-            println!("{}", "1:1 NAT rules configured successfully.".green());
-        }
+    let status_masq = Command::new("nft").args(&["add", "rule", "ip", &table_name, "nat", "ip", "saddr", subnet_cidr, "masquerade"]).status()?;
+    if !status1.success() || !status2.success() || !status_masq.success() {
+        println!("{}", "Warning: nftables NAT configuration failed. Subsystem may not have internet access.".yellow());
     } else {
-        let status_masq = Command::new("nft").args(&["add", "rule", "ip", &table_name, "nat", "ip", "saddr", subnet_cidr, "masquerade"]).status()?;
-        if !status1.success() || !status2.success() || !status_masq.success() {
-            println!("{}", "Warning: nftables NAT configuration failed. Subsystem may not have internet access.".yellow());
-        } else {
-            println!("{}", "nftables NAT rules configured successfully.".green());
-        }
+        println!("{}", "nftables NAT rules configured successfully.".green());
     }
 
     Ok(())
@@ -326,19 +345,6 @@ pub fn cleanup_network(name: &str) -> io::Result<()> {
     let netns_name = format!("lsl-{}", name);
     let netns_path = format!("/var/run/netns/{}", netns_name);
     let table_name = format!("lsl-{}", name);
-
-    // Remove any IP alias on host physical interface if a static IP was used
-    let config = crate::config::GlobalConfig::load();
-    if let Some(distro) = config.distros.get(name) {
-        let ip_address = &distro.ip_address;
-        if ip_address != "dhcp" {
-            if let Ok((host_dev, _, _)) = get_default_route_details() {
-                let _ = Command::new("ip")
-                    .args(&["addr", "del", &format!("{}/24", ip_address), "dev", &host_dev])
-                    .status();
-            }
-        }
-    }
 
     // Kill any dhclient process associated with this network interface inside netns
     let _ = Command::new("pkill").args(&["-f", &format!("dhclient.*{}", netns_name)]).status();
